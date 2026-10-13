@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minecraft Block Editor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #181818;
+            color: #eee;
+            margin: 0;
+            padding: 30px;
+        }
+
+        h1 {
+            margin-top: 0;
+        }
+
+        button {
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            padding: 9px 14px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        button:hover {
+            background: #444;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        #blocks {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 15px;
+        }
+
+        .block {
+            background: #222;
+            border: 1px solid #444;
+            padding: 15px;
+            border-radius: 7px;
+        }
+
+        .block-header {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .block-header input {
+            flex: 1;
+        }
+
+        input {
+            background: #111;
+            color: white;
+            border: 1px solid #555;
+            padding: 8px;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .color-row {
+            display: grid;
+            grid-template-columns: 50px 1fr auto;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        input[type="color"] {
+            width: 50px;
+            height: 38px;
+            padding: 2px;
+            cursor: pointer;
+        }
+
+        .picker-button {
+            padding: 8px 10px;
+            white-space: nowrap;
+        }
+
+        .price {
+            margin-top: 15px;
+        }
+
+        .price input {
+            width: 150px;
+            margin-left: 8px;
+        }
+
+        .delete {
+            background: #5a2222;
+        }
+
+        .delete:hover {
+            background: #742b2b;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .info {
+            color: #aaa;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Minecraft Block Editor</h1>
+    <div class="info"> Wähle Farben manuell oder direkt von deinem Bildschirm aus. </div>
+    <div class="toolbar">
+        <button onclick="addBlock()">+ Block hinzufügen</button>
+        <button onclick="document.getElementById('fileInput').click()"> blocks.json laden </button>
+        <button onclick="downloadJSON()"> blocks.json speichern </button>
+        <input type="file" id="fileInput" accept=".json" onchange="loadJSON(event)">
+    </div>
+    <div id="blocks"></div>
+    <script>
+        let blocks = [];
+        // ------------------------------------------------------------
+        // BLOCK VERWALTUNG
+        // ------------------------------------------------------------
+        function addBlock(data = null) {
+            blocks.push({
+                name: data?.name || "New Block",
+                colors: data?.colors || ["#000000", "#000000", "#000000"],
+                stack_price: data?.stack_price ?? 0
+            });
+            render();
+        }
+
+        function deleteBlock(index) {
+            blocks.splice(index, 1);
+            render();
+        }
+
+        function updateBlock(index, field, value) {
+            blocks[index][field] = value;
+        }
+
+        function updateColor(index, colorIndex, value) {
+            if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
+                blocks[index].colors[colorIndex] = value;
+            }
+        }
+        // ------------------------------------------------------------
+        // SCREEN COLOR PICKER
+        // ------------------------------------------------------------
+        async function pickScreenColor(index, colorIndex) {
+            // Prüfen, ob der Browser EyeDropper unterstützt
+            if (!("EyeDropper" in window)) {
+                alert("Dein Browser unterstützt den Screen Color Picker nicht.\n\n" + "Verwende beispielsweise Microsoft Edge oder Google Chrome.");
+                return;
+            }
+            try {
+                const eyeDropper = new EyeDropper();
+                const result = await eyeDropper.open();
+                const color = result.sRGBHex.toUpperCase();
+                blocks[index].colors[colorIndex] = color;
+                render();
+            } catch (error) {
+                // Benutzer hat ESC gedrückt
+                if (error.name !== "AbortError") {
+                    console.error(error);
+                }
+            }
+        }
+        // ------------------------------------------------------------
+        // HTML DARSTELLUNG
+        // ------------------------------------------------------------
+        function render() {
+            const container = document.getElementById("blocks");
+            container.innerHTML = "";
+            blocks.forEach((block, index) => {
+                const element = document.createElement("div");
+                element.className = "block";
+                element.innerHTML = `
+
+                    <div class="block-header">
+
+                        <input
+                            type="text"
+                            value="${escapeHTML(block.name)}"
+                            placeholder="Block name"
+                            oninput="
+                                updateBlock(
+                                    ${index},
+                                    'name',
+                                    this.value
+                                )
+                            "
+                        >
+
+                        <button
+                            class="delete"
+                            onclick="deleteBlock(${index})"
+                        >
+                            Löschen
+                        </button>
+
+                    </div>
+
+
+                    <strong>Farben</strong>
+
+                    ${block.colors.map((color, colorIndex) => `
+
+                        <div class="color-row">
+
+                            <!-- Normaler Color Picker -->
+                            <input
+                                type="color"
+                                value="${color}"
+                                onchange="
+                                    blocks[${index}].colors[${colorIndex}]
+                                    = this.value.toUpperCase();
+
+                                    render();
+                                "
+                            >
+
+
+                            <!-- HEX Eingabe -->
+                            <input
+                                type="text"
+                                value="${color}"
+                                maxlength="7"
+                                placeholder="#000000"
+                                oninput="
+                                    updateColor(
+                                        ${index},
+                                        ${colorIndex},
+                                        this.value.toUpperCase()
+                                    )
+                                "
+                            >
+
+
+                            <!-- Bildschirm Picker -->
+                            <button
+                                class="picker-button"
+                                onclick="
+                                    pickScreenColor(
+                                        ${index},
+                                        ${colorIndex}
+                                    )
+                                "
+                                title="Farbe direkt vom Bildschirm auswählen"
+                            >
+                                Bildschirm
+                            </button>
+
+                        </div>
+
+                    `).join("")}
+
+
+                    <div class="price">
+
+                        <strong>Stack-Preis:</strong>
+
+                        <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value="${block.stack_price}"
+                            oninput="
+                                updateBlock(
+                                    ${index},
+                                    'stack_price',
+                                    Number(this.value)
+                                )
+                            "
+                        >
+
+                    </div>
+
+                `;
+                container.appendChild(element);
+            });
+        }
+        // ------------------------------------------------------------
+        // JSON SPEICHERN
+        // ------------------------------------------------------------
+        function downloadJSON() {
+            const data = {
+                blocks: blocks
+            };
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob(
+                [json], {
+                type: "application/json"
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "blocks.json";
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        // ------------------------------------------------------------
+        // JSON LADEN
+        // ------------------------------------------------------------
+        function loadJSON(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (!Array.isArray(data.blocks)) {
+                        throw new Error("Ungültiges blocks.json Format");
+                    }
+                    blocks = data.blocks;
+                    render();
+                } catch (error) {
+                    alert("Fehler beim Laden der JSON:\n\n" + error.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+        // ------------------------------------------------------------
+        // HTML ESCAPEN
+        // ------------------------------------------------------------
+        function escapeHTML(value) {
+            return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+        }
+        // ------------------------------------------------------------
+        // STARTBLOCK
+        // ------------------------------------------------------------
+        addBlock({
+            name: "Blackstone",
+            colors: ["#1A1719", "#242124", "#302C30"],
+            stack_price: 128
+        });
+
+    </script>
+</body>
+
+</html> 
